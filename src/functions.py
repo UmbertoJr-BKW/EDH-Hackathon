@@ -555,3 +555,25 @@ def suggest_grid_reinforcement(
         'reinforced_graph': g_reinforced
     }
 
+
+# --- Helper function for printing results consistently ---
+def print_analysis_results(title, results):
+    print(f"\n{'='*20}\n--- {title} ---\n{'='*20}")
+    fuse_failures = results['fuse_failures']
+    link_failures = results['link_failures']
+
+    if not fuse_failures and not link_failures:
+        print("\n✅ SUCCESS: The network is robust under these conditions. No overloads detected.")
+        return
+
+    if fuse_failures:
+        print(f"\n🚨 FUSE FAILURES: Found {len(fuse_failures)} overloaded consumer fuses.")
+        display(pd.DataFrame(fuse_failures))
+    else:
+        print("\n✅ No fuse failures were detected.")
+
+    if link_failures:
+        print(f"\n🚨 LINK FAILURES: Found {len(link_failures)} overloaded cables.")
+        display(pd.DataFrame(link_failures))
+    else:
+        print("\n✅ No link/cable failures were detected.")
