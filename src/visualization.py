@@ -1,4 +1,4 @@
-# src_leg_challenge/visualization.py
+# src/visualization.py
 
 import plotly.graph_objects as go
 import networkx as nx
@@ -9,12 +9,26 @@ import pandas as pd
 # ==============================================================================
 # --- HELPER FUNCTIONS FOR CODE REUSABILITY ---
 # ==============================================================================
-
-def _compute_layout(graph: nx.Graph, root_node_ids: List[str]) -> Dict:
+def _compute_layout(graph: nx.Graph, root_node_ids: List[str], optimize_space: bool=False) -> Dict:
     """
-    Computes the network layout, pinning root nodes for a clearer structure.
-    Tries a pinned spring layout first, then falls back to other methods.
+    Computes the network layout. Prioritizes using pre-defined 'pos' attributes
+    on nodes. If not available, or if optimize_space is True, falls back to
+    abstract layout algorithms.
     """
+    # --- Attempt to use pre-defined coordinates first ---
+    pos_attributes = nx.get_node_attributes(graph, 'pos')
+    
+    # Check if all nodes have a 'pos' attribute and we are NOT optimizing for space.
+    if len(pos_attributes) == graph.number_of_nodes() and graph.number_of_nodes() > 0 and not optimize_space:
+        print("Computing layout: Using pre-defined geographic coordinates from graph nodes.")
+        return pos_attributes # Use the coordinates stored in the graph
+    
+    # --- Fallback to abstract layout if coordinates are missing or if space optimization is requested ---
+    if optimize_space:
+        print("`optimize_space` is True. Falling back to abstract layout for a compact view.")
+    else:
+        print("Coordinates not found on graph nodes. Falling back to abstract layout.")
+        
     print("Computing layout (pinning root nodes for clarity)...")
     try:
         # Pin root nodes to the top for a hierarchical view
@@ -27,6 +41,7 @@ def _compute_layout(graph: nx.Graph, root_node_ids: List[str]) -> Dict:
         except (nx.NetworkXError, nx.NetworkXUnfeasible):
             print("  -> Kamada-Kawai layout failed, falling back to simple spring_layout.")
             return nx.spring_layout(graph, k=0.15, iterations=70, seed=42)
+
 
 def _prepare_failure_maps(link_failures: List[Dict], fuse_failures: List[Dict], graph: nx.Graph) -> tuple:
     """Prepares dictionaries for quick lookup of failure data."""
@@ -52,7 +67,8 @@ def _visualize_network_core(
     title: str,
     link_failures: Optional[List[Dict]] = None,
     fuse_failures: Optional[List[Dict]] = None,
-    upgraded_link_details: Optional[Dict] = None
+    upgraded_link_details: Optional[Dict] = None,
+    optimize_space: bool = False,
 ):
     """Core function to generate and display the network visualization."""
     link_failures = link_failures or []
@@ -62,7 +78,8 @@ def _visualize_network_core(
     if upgraded_link_details:
         link_failures = []
 
-    pos = _compute_layout(graph, root_node_ids)
+    # --- FIX: Pass the optimize_space flag to the layout function ---
+    pos = _compute_layout(graph, root_node_ids, optimize_space=optimize_space)
     
     failed_link_set, failed_link_details, failed_node_map = _prepare_failure_maps(link_failures, fuse_failures, graph)
 
@@ -79,7 +96,6 @@ def _visualize_network_core(
         x1, y1 = pos[v]
         edge_tuple = tuple(sorted((u, v)))
         
-        # --- NEW: Get and format the link length string ---
         link_length = data.get('length', 0.0)
         length_str = f"Link Length: {link_length:.1f} m<br>"
 
@@ -89,7 +105,6 @@ def _visualize_network_core(
         if edge_tuple in failed_link_set:
             trace_key = 'failed'
             details = failed_link_details[edge_tuple]
-            # --- MODIFIED: Added length_str ---
             hover_text = (f"<b>🚨 OVERLOADED LINK 🚨</b><br>Connection: {u}-{v}<br>{length_str}<br>"
                           f"Max Allowed: {details['max_allowed_current_A']:.2f} A<br>"
                           f"Calculated Peak: {details['calculated_current_A']:.2f} A<br>"
@@ -99,14 +114,12 @@ def _visualize_network_core(
             trace_key = 'upgraded'
             upgrade_info = upgraded_link_details[edge_tuple]
             cost = upgrade_info.get('cost_CHF', 0.0)
-            # --- MODIFIED: Added length_str ---
             hover_text = (f"<b>🔧 REINFORCED LINK 🔧</b><br>Connection: {u}-{v}<br>{length_str}<br>"
                           f"New Cable Type: {data.get('reinforcement_type', 'N/A')}<br>"
                           f"<b>New Max Current: {data.get('Irmax_hoch', 0):.2f} A</b><br>"
                           f"<b>Cost of Fix: {cost:,.2f} CHF</b>")
         else:
             trace_key = 'normal'
-            # --- MODIFIED: Added length_str ---
             hover_text = (f"Connection: {u}-{v}<br>{length_str}"
                           f"Aggregated Imax: {data.get('Irmax_hoch', 0):.2f} A")
         
@@ -117,7 +130,6 @@ def _visualize_network_core(
         em_y.append((y0 + y1) / 2)
         em_text.append(hover_text)
     
-    # ... (the rest of the function remains the same) ...
     for trace in edge_traces.values():
         if trace['x']:
             traces.append(trace)
@@ -176,33 +188,38 @@ def _visualize_network_core(
 # --- PUBLIC-FACING WRAPPER FUNCTIONS ---
 # ==============================================================================
 
-def visualize_network_topology(graph: nx.Graph, root_node_ids: List[str]):
+def visualize_network_topology(graph: nx.Graph, root_node_ids: List[str], optimize_space: bool = False):
     """
     Generates an interactive Plotly visualization of the base network topology.
     """
     print("\n--- Creating interactive visualization of the network topology ---")
+    # --- FIX: Pass optimize_space as a keyword argument ---
     _visualize_network_core(
         graph=graph,
         root_node_ids=root_node_ids,
-        title='Interactive Visualization of Network Topology'
+        title='Interactive Visualization of Network Topology',
+        optimize_space=optimize_space
     )
 
 def visualize_network_with_failures(
     graph: nx.Graph,
     root_node_ids: List[str],
     link_failures: List[Dict],
-    fuse_failures: List[Dict]
+    fuse_failures: List[Dict],
+    optimize_space: bool = False
 ):
     """
     Generates an interactive visualization of the network, highlighting failures.
     """
     print("\n--- Creating interactive visualization with failure highlighting ---")
+    # --- FIX: Added optimize_space parameter for consistency ---
     _visualize_network_core(
         graph=graph,
         root_node_ids=root_node_ids,
         title='Network Capacity Analysis - Visualization of Failures',
         link_failures=link_failures,
-        fuse_failures=fuse_failures
+        fuse_failures=fuse_failures,
+        optimize_space=optimize_space
     )
     
 
@@ -211,7 +228,8 @@ def visualize_reinforced_network(
     reinforced_graph: nx.Graph,
     root_node_ids: list[str],
     reinforcement_plan: pd.DataFrame,
-    total_cost: float
+    total_cost: float,
+    optimize_space: bool = False
 ):
     """
     Generates an interactive visualization of the reinforced network topology.
@@ -219,7 +237,6 @@ def visualize_reinforced_network(
     """
     print("\n--- Creating visualization of the reinforced network ---")
     
-    # --- CHANGE: Create and pass the details dictionary ---
     upgraded_link_details = {}
     if not reinforcement_plan.empty and 'fixed_link' in reinforcement_plan.columns:
         plan_copy = reinforcement_plan.copy()
@@ -228,11 +245,13 @@ def visualize_reinforced_network(
 
     title = f"Reinforced Network Topology - Total Cost: {total_cost:,.2f} CHF"
     
+    # --- FIX: Added optimize_space parameter for consistency ---
     _visualize_network_core(
         graph=reinforced_graph,
         root_node_ids=root_node_ids,
         title=title,
-        upgraded_link_details=upgraded_link_details
+        upgraded_link_details=upgraded_link_details,
+        optimize_space=optimize_space
     )
     
 
@@ -242,17 +261,16 @@ def visualize_grid_improvement(
     reinforced_graph: nx.Graph,
     reinforcement_plan: pd.DataFrame,
     root_node_ids: list[str],
-    total_cost: float
+    total_cost: float,
+    optimize_space: bool = False
 ):
     """
     Creates a powerful "before and after" visualization of the grid reinforcement.
     """
     print("\n--- Creating 'Before & After' visualization of grid improvements ---")
 
-    # --- CHANGE: Create a dictionary mapping links to their upgrade details ---
     upgraded_link_details = {}
     if not reinforcement_plan.empty:
-        # Create a temporary column with the sorted tuple for indexing
         plan_copy = reinforcement_plan.copy()
         plan_copy['sorted_link'] = plan_copy['fixed_link'].apply(lambda x: tuple(sorted(x)))
         upgraded_link_details = plan_copy.set_index('sorted_link').to_dict(orient='index')
@@ -263,11 +281,12 @@ def visualize_grid_improvement(
 
     title = f"Grid Reinforcement Analysis: {len(upgraded_link_details)} Upgrades for {total_cost:,.2f} CHF"
 
-    # --- CHANGE: Pass the new details dictionary to the core visualizer ---
+    # --- FIX: Added optimize_space parameter for consistency ---
     _visualize_network_core(
         graph=reinforced_graph,
         root_node_ids=root_node_ids,
         title=title,
         link_failures=initial_failure_links,
-        upgraded_link_details=upgraded_link_details # Pass the detailed dictionary
+        upgraded_link_details=upgraded_link_details,
+        optimize_space=optimize_space
     )

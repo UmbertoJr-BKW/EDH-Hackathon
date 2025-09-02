@@ -1,4 +1,4 @@
-# src_leg_challenge/functions.py
+# EDH-Hackathon/src/functions.py
 
 """
 This module provides functions for analyzing a low-voltage electrical grid.
@@ -18,12 +18,13 @@ import time
 # --- NETWORK BUILDING AND SIMPLIFICATION (MULTI-TRANSFORMER SUPPORT) ---
 # ==============================================================================
 
-def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
+def build_and_simplify_network(df_station: pd.DataFrame) -> tuple:
     """
     Processes raw network data for a SINGLE STATION, builds a simplified graph,
-    and prunes dangling edges that do not terminate at a consumer.
+    and prunes dangling edges.
 
-    MODIFICATION: Added Step 7 to prune non-consumer leaf nodes.
+    MODIFICATION: Added coordinate columns to the numeric conversion step to
+                  prevent TypeError during visualization.
 
     Args:
         df_station (pd.DataFrame): DataFrame for a single station.
@@ -36,22 +37,26 @@ def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
 
     df_raw = df_station.copy()
 
-    # Steps 1-4 are unchanged...
+    # Step 1 is unchanged...
     # ==============================================================================
     # === Step 1: Normalize Consumer Connection Direction ===
     # ==============================================================================
     print("Step 1: Normalizing consumer connection directions...")
     reversed_mask = df_raw['to'].str.startswith('HAS', na=False) & \
                     ~df_raw['from'].str.startswith('HAS', na=False)
-    print(f"  -> Found {reversed_mask.sum()} consumer connections with reversed direction. Swapping...")
     df_raw.loc[reversed_mask, ['from', 'to']] = \
         df_raw.loc[reversed_mask, ['to', 'from']].values
     
     # ==============================================================================
     # --- Step 2: Convert columns to appropriate data types ---
+    # <<< FIX APPLIED HERE >>>
     # ==============================================================================
     print("Step 2: Converting columns to appropriate data types...")
-    numeric_cols = ['length', 'ratedCurrent', 'Irmax_hoch', 'X', 'R', 'X0', 'R0', 'C', 'G', 'C0']
+    # Add the coordinate columns to the list of columns to be converted to numeric
+    numeric_cols = [
+        'length', 'ratedCurrent', 'Irmax_hoch', 'X', 'R', 'X0', 'R0', 
+        'C', 'G', 'C0', 'x1', 'y1', 'x2', 'y2'
+    ]
     string_cols = ['from', 'to', 'id_equ', 'name', 'station']
     for col in numeric_cols:
         if col in df_raw.columns:
@@ -61,8 +66,28 @@ def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
             df_raw[col] = df_raw[col].astype('string')
     if 'normalOpen' in df_raw.columns:
         df_raw['normalOpen'] = df_raw['normalOpen'].astype(bool)
-    print("  -> Data types successfully converted.")
 
+    # ==============================================================================
+    # --- Step 2.5: Extract Node Coordinates ---
+    # ==============================================================================
+    print("Step 2.5: Extracting node coordinates...")
+    node_coordinates = {}
+    coord_cols = ['x1', 'y1', 'x2', 'y2']
+    
+    if all(col in df_raw.columns for col in coord_cols):
+        from_nodes = df_raw[['from', 'x1', 'y1']].rename(
+            columns={'from': 'node_id', 'x1': 'x', 'y1': 'y'}
+        )
+        to_nodes = df_raw[['to', 'x2', 'y2']].rename(
+            columns={'to': 'node_id', 'x2': 'x', 'y2': 'y'}
+        )
+        all_nodes_df = pd.concat([from_nodes, to_nodes]).dropna().drop_duplicates(subset=['node_id'])
+        node_coordinates = {row.node_id: (row.x, row.y) for row in all_nodes_df.itertuples()}
+        print(f"  -> Extracted coordinates for {len(node_coordinates)} unique nodes.")
+    else:
+        print("  -> Coordinate columns ('x1', 'y1', 'x2', 'y2') not found. Skipping coordinate extraction.")
+
+    # The rest of the function remains unchanged...
     # ==============================================================================
     # --- Step 3: Segregating network data ---
     # ==============================================================================
@@ -72,12 +97,9 @@ def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
     df_consumers = df_raw[is_consumer_row].copy()
     df_transformers = df_raw[is_transformer_row].copy()
     df_edges = df_raw[~is_transformer_row].copy()
-    print(f"  -> Identified {df_consumers['from'].nunique()} unique consumers.")
-    print(f"  -> Identified {len(df_transformers)} transformers.")
     transformer_pins = set()
     if not df_transformers.empty:
         transformer_pins = set(df_transformers['from']).union(set(df_transformers['to']))
-        print(f"  -> Identified {len(transformer_pins)} unique transformer connection PINs to preserve.")
         
     # ==============================================================================
     # --- Step 4: Infer and Store Consumer Properties ---
@@ -115,7 +137,6 @@ def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
     if not df_zero_length_edges.empty:
         G_zero_length = nx.from_pandas_edgelist(df_zero_length_edges, 'from', 'to')
         components_to_merge = list(nx.connected_components(G_zero_length))
-        print(f"  -> Found {len(components_to_merge)} components to merge based on zero-length edges.")
         for component in components_to_merge:
             representative_node = sorted(list(component), key=lambda x: (x not in transformer_pins, x.startswith('HAS'), x))[0]
             for node in component:
@@ -147,6 +168,16 @@ def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
         if 'contained_consumers' not in G_simplified.nodes[final_node_name]:
             G_simplified.nodes[final_node_name].update({'contained_consumers': [], 'is_consumer_connection': True})
         G_simplified.nodes[final_node_name]['contained_consumers'].append(original_node)
+        
+    if node_coordinates:
+        print("  -> Attaching coordinates to simplified graph nodes...")
+        nodes_with_coords = 0
+        for node in G_simplified.nodes():
+            coords = node_coordinates.get(node)
+            if coords:
+                G_simplified.nodes[node]['pos'] = coords
+                nodes_with_coords += 1
+        print(f"  -> Successfully attached coordinates to {nodes_with_coords}/{G_simplified.number_of_nodes()} nodes.")
 
     # ==============================================================================
     # --- Step 6: Detecting all root nodes (transformers) ---
@@ -177,17 +208,13 @@ def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
             G_simplified.nodes[root_id]['is_transformer'] = True
 
     # ==============================================================================
-    # --- Step 7: Prune Dangling Edges (New Step) ---
+    # --- Step 7: Prune Dangling Edges ---
     # ==============================================================================
     print("Step 7: Pruning dangling edges without consumers...")
     nodes_pruned_total = 0
     while True:
         nodes_to_remove = []
         for node in G_simplified.nodes():
-            # Conditions to prune a node:
-            # 1. It's a leaf node (degree 1).
-            # 2. It is NOT a consumer connection point.
-            # 3. It is NOT a root node (transformer).
             is_leaf = G_simplified.degree(node) == 1
             is_consumer = G_simplified.nodes[node].get('is_consumer_connection', False)
             is_root = node in root_node_ids
@@ -196,21 +223,16 @@ def build_and_simplify_network_adapted(df_station: pd.DataFrame) -> tuple:
                 nodes_to_remove.append(node)
         
         if not nodes_to_remove:
-            # If no nodes were found to remove, the process is complete.
             break
         else:
-            # Remove the identified nodes and loop again.
             G_simplified.remove_nodes_from(nodes_to_remove)
             nodes_pruned_total += len(nodes_to_remove)
-            print(f"  -> Pruned {len(nodes_to_remove)} node(s) in this iteration.")
 
     if nodes_pruned_total > 0:
         print(f"  -> Finished pruning. A total of {nodes_pruned_total} nodes were removed.")
     else:
         print("  -> No dangling non-consumer edges found to prune.")
     
-    # ==============================================================================
-
     print(f"✅ Network build complete for {station_name}. Detected {len(root_node_ids)} root node(s): {root_node_ids}")
 
     return G_simplified, consumer_properties, root_node_ids
