@@ -577,3 +577,49 @@ def print_analysis_results(title, results):
         display(pd.DataFrame(link_failures))
     else:
         print("\n✅ No link/cable failures were detected.")
+        
+        
+        
+
+import os
+
+def update_and_save_parquet(new_data_df, file_path, customers_to_update):
+    """
+    Saves or updates a Parquet file with new profile data for a specific set of customers.
+
+    Args:
+        new_data_df (pd.DataFrame): DataFrame containing the new profile data. 
+                                    It can be a large frame, but only data from 
+                                    'customers_to_update' will be used.
+        file_path (str): The full path to the Parquet file to be saved.
+        customers_to_update (list): A list of customer IDs whose data should be
+                                    updated or added to the file.
+    """
+    # Filter the new data to only include columns for the customers we just analyzed
+    relevant_new_data = new_data_df[customers_to_update]
+
+    if os.path.exists(file_path):
+        print(f"File '{os.path.basename(file_path)}' exists. Loading and updating...")
+        try:
+            existing_df = pd.read_parquet(file_path)
+            
+            # Update existing columns and add new ones from the relevant new data
+            for col in relevant_new_data.columns:
+                existing_df[col] = relevant_new_data[col]
+            
+            final_df = existing_df
+            print(f"Updated data for {len(customers_to_update)} customers.")
+
+        except Exception as e:
+            print(f"Error reading existing file {file_path}: {e}. Overwriting with new data.")
+            final_df = relevant_new_data
+    else:
+        print(f"File '{os.path.basename(file_path)}' does not exist. Creating new file...")
+        final_df = relevant_new_data
+
+    try:
+        final_df.to_parquet(file_path, index=True)
+        print(f"Successfully saved data to '{file_path}'")
+    except Exception as e:
+        print(f"Error saving file {file_path}: {e}")
+
