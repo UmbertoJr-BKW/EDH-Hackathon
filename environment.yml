@@ -1,0 +1,31 @@
+# A name for your conda environment
+name: edh-hackathon-env
+
+# The channels conda will search for packages, in order of priority.
+# Using 'nodefaults' prevents mixing with the base channel, leading to more stable environments.
+channels:
+  - conda-forge
+  - nodefaults
+
+# A list of your project's dependencies
+dependencies:
+  # 1. Specify the Python version
+  - python=3.10
+
+  # 2. Add your other packages with version constraints
+  - matplotlib>=3.8,<4.0
+  - plotly>=6.3.0,<7.0.0
+  - pandas>=2.3.2,<3.0.0
+  - numpy<2.0
+  - scikit-learn>=1.5.0,<2.0.0  # Note: 1.7.1 is not yet released, using the latest available
+  - pyarrow>=16.0.0,<17.0.0    # Note: 21.0.0 is not yet released, using the latest available
+  - seaborn>=0.13.2,<0.14.0
+  - networkx<3.3
+  - ipywidgets>=8.1.2,<9.0.0    # Note: Adjusted to a version available on conda-forge
+
+  # 3. It's good practice to add pip here for completeness
+  - pip
+  
+  # 4. If you need any packages ONLY available on PyPI, add them here
+  # - pip:
+  #   - some-pypi-only-package
