@@ -179,7 +179,7 @@ def _visualize_network_core(
         )
     )
     unique_id = str(uuid.uuid4())[:8]
-    output_filename = f"network_visualization_{station_name}.html"
+    output_filename = f"plots/network_visualization_{station_name}.html"
     fig.write_html(output_filename)
     print(f"--- Successfully saved visualization to '{output_filename}' ---")
     fig.show()
@@ -268,7 +268,8 @@ def visualize_grid_improvement(
     reinforcement_plan: pd.DataFrame,
     root_node_ids: list[str],
     total_cost: float,
-    optimize_space: bool = False
+    optimize_space: bool = False,
+    station_name: str = ""
 ):
     """
     Creates a powerful "before and after" visualization of the grid reinforcement.
@@ -294,5 +295,6 @@ def visualize_grid_improvement(
         title=title,
         link_failures=initial_failure_links,
         upgraded_link_details=upgraded_link_details,
-        optimize_space=optimize_space
+        optimize_space=optimize_space,
+        station_name = station_name
     )
