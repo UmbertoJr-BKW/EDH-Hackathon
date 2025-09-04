@@ -69,6 +69,7 @@ def _visualize_network_core(
     fuse_failures: Optional[List[Dict]] = None,
     upgraded_link_details: Optional[Dict] = None,
     optimize_space: bool = False,
+    station_name: str = ""
 ):
     """Core function to generate and display the network visualization."""
     link_failures = link_failures or []
@@ -178,8 +179,8 @@ def _visualize_network_core(
         )
     )
     unique_id = str(uuid.uuid4())[:8]
-    output_filename = f"network_visualization_{unique_id}.html"
-    #fig.write_html(output_filename)
+    output_filename = f"network_visualization_{station_name}.html"
+    fig.write_html(output_filename)
     print(f"--- Successfully saved visualization to '{output_filename}' ---")
     fig.show()
     
@@ -188,7 +189,7 @@ def _visualize_network_core(
 # --- PUBLIC-FACING WRAPPER FUNCTIONS ---
 # ==============================================================================
 
-def visualize_network_topology(graph: nx.Graph, root_node_ids: List[str], optimize_space: bool = False):
+def visualize_network_topology(graph: nx.Graph, root_node_ids: List[str], optimize_space: bool = False, station_name: str = ""):
     """
     Generates an interactive Plotly visualization of the base network topology.
     """
@@ -197,8 +198,9 @@ def visualize_network_topology(graph: nx.Graph, root_node_ids: List[str], optimi
     _visualize_network_core(
         graph=graph,
         root_node_ids=root_node_ids,
-        title='Interactive Visualization of Network Topology',
-        optimize_space=optimize_space
+        title=f'Interactive Visualization of Network Topology {station_name}',
+        optimize_space=optimize_space,
+        station_name = station_name
     )
 
 def visualize_network_with_failures(
@@ -206,7 +208,8 @@ def visualize_network_with_failures(
     root_node_ids: List[str],
     link_failures: List[Dict],
     fuse_failures: List[Dict],
-    optimize_space: bool = False
+    optimize_space: bool = False,
+    station_name: str = ""
 ):
     """
     Generates an interactive visualization of the network, highlighting failures.
@@ -216,10 +219,11 @@ def visualize_network_with_failures(
     _visualize_network_core(
         graph=graph,
         root_node_ids=root_node_ids,
-        title='Network Capacity Analysis - Visualization of Failures',
+        title=f'Network Capacity Analysis - Visualization of Failures {station_name}',
         link_failures=link_failures,
         fuse_failures=fuse_failures,
-        optimize_space=optimize_space
+        optimize_space=optimize_space,
+        station_name = station_name
     )
     
 
@@ -229,7 +233,8 @@ def visualize_reinforced_network(
     root_node_ids: list[str],
     reinforcement_plan: pd.DataFrame,
     total_cost: float,
-    optimize_space: bool = False
+    optimize_space: bool = False,
+    station_name: str = ""
 ):
     """
     Generates an interactive visualization of the reinforced network topology.
@@ -243,7 +248,7 @@ def visualize_reinforced_network(
         plan_copy['sorted_link'] = plan_copy['fixed_link'].apply(lambda x: tuple(sorted(x)))
         upgraded_link_details = plan_copy.set_index('sorted_link').to_dict(orient='index')
 
-    title = f"Reinforced Network Topology - Total Cost: {total_cost:,.2f} CHF"
+    title = f"Reinforced Network Topology {station_name} - Total Cost: {total_cost:,.2f} CHF"
     
     # --- FIX: Added optimize_space parameter for consistency ---
     _visualize_network_core(
@@ -251,7 +256,8 @@ def visualize_reinforced_network(
         root_node_ids=root_node_ids,
         title=title,
         upgraded_link_details=upgraded_link_details,
-        optimize_space=optimize_space
+        optimize_space=optimize_space,
+        station_name = station_name
     )
     
 
