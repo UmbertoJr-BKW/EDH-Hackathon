@@ -1,44 +1,37 @@
 {
-  "name": "EDH Hackathon (Conda + Blobfuse2)",
+  "name": "EDH Hackathon (Conda + Data)",
   
-  // Use a standard Microsoft-provided Python image.
-  // The 'conda' feature will install Miniconda on top of this.
   "image": "mcr.microsoft.com/devcontainers/python:3.10-bullseye",
 
-  // Add the Conda feature to install Miniconda
   "features": {
     "ghcr.io/devcontainers/features/conda:1": {
-      "version": "latest" // Install the latest Miniconda
+      "version": "latest"
     }
   },
 
-  // This is the key part: Commands run AFTER the container is built.
+  // postCreateCommand runs after the container is created, but before you're connected.
+  // It's perfect for setting up environments and downloading data.
   "postCreateCommand": [
-    // --- 1. Create the Conda environment ---
-    // This command will create the 'edh-hackathon-env' based on your environment.yml
+    // --- 1. Create the Conda environment from your file ---
     "conda env create -f environment.yml",
     
-    // --- 2. Configure the shell to activate the environment automatically ---
-    // This adds a line to the .bashrc file so that the 'edh-hackathon-env'
-    // is activated every time a new terminal is opened in the Codespace.
+    // --- 2. Configure the shell to auto-activate the new environment ---
     "echo 'conda activate edh-hackathon-env' >> ~/.bashrc",
 
-    // --- 3. Run the Blobfuse2 setup script ---
-    // Make the script executable and then run it.
-    "chmod +x .devcontainer/setup_blobfuse.sh",
-    ".devcontainer/setup_blobfuse.sh"
+    // --- 3. Run the data download script ---
+    // This replaces the old blobfuse setup.
+    "chmod +x .devcontainer/setup_data.sh",
+    ".devcontainer/setup_data.sh"
   ],
 
-  // Optional: VS Code extensions to install automatically
   "customizations": {
     "vscode": {
       "extensions": [
-        "ms-python.python",      // Essential for Python development
-        "ms-toolsai.jupyter"     // For Jupyter Notebook support
+        "ms-python.python",
+        "ms-toolsai.jupyter"
       ]
     }
   },
-
-  // Run as a non-root user for security
+  
   "remoteUser": "vscode"
 }
