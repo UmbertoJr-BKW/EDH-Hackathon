@@ -25,7 +25,7 @@ dependencies:
   - jupyterlab>=4.0,<5.0       # The JupyterLab interface
   - ipykernel                   # The kernel for Jupyter
   - ipywidgets>=8.1.2,<9.0.0     # For interactive widgets
-  - jupyterlab-plotly           # The key extension for Plotly in JupyterLab
+  - jupyterlab-plotly-extension           # The key extension for Plotly in JupyterLab
   - nbformat
 
   # 4. It's good practice to add pip here for completeness
