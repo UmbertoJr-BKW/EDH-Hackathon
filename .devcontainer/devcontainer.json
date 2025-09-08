@@ -1,0 +1,44 @@
+{
+  "name": "EDH Hackathon (Conda + Blobfuse2)",
+  
+  // Use a standard Microsoft-provided Python image.
+  // The 'conda' feature will install Miniconda on top of this.
+  "image": "mcr.microsoft.com/devcontainers/python:3.10-bullseye",
+
+  // Add the Conda feature to install Miniconda
+  "features": {
+    "ghcr.io/devcontainers/features/conda:1": {
+      "version": "latest" // Install the latest Miniconda
+    }
+  },
+
+  // This is the key part: Commands run AFTER the container is built.
+  "postCreateCommand": [
+    // --- 1. Create the Conda environment ---
+    // This command will create the 'edh-hackathon-env' based on your environment.yml
+    "conda env create -f environment.yml",
+    
+    // --- 2. Configure the shell to activate the environment automatically ---
+    // This adds a line to the .bashrc file so that the 'edh-hackathon-env'
+    // is activated every time a new terminal is opened in the Codespace.
+    "echo 'conda activate edh-hackathon-env' >> ~/.bashrc",
+
+    // --- 3. Run the Blobfuse2 setup script ---
+    // Make the script executable and then run it.
+    "chmod +x .devcontainer/setup_blobfuse.sh",
+    ".devcontainer/setup_blobfuse.sh"
+  ],
+
+  // Optional: VS Code extensions to install automatically
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",      // Essential for Python development
+        "ms-toolsai.jupyter"     // For Jupyter Notebook support
+      ]
+    }
+  },
+
+  // Run as a non-root user for security
+  "remoteUser": "vscode"
+}
