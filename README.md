@@ -1,6 +1,6 @@
 # EDIH-Hackathon: The Energy Trilemma Challenge
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/{{ YOUR_GITHUB_ORG }}/{{ YOUR_REPO_NAME }})
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new/UmbertoJr-BKW/EDH-Hackathon)
 
 > Can we empower communities to finally break the energy trilemma—maximizing renewables, increase autarky, and guaranteeing network reliability—all at once?
 
