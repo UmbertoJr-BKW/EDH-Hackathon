@@ -9,12 +9,9 @@
     }
   },
 
-  "postCreateCommand": [
-    "conda env create -f environment.yml",
-    "echo 'conda activate edh-hackathon-env' >> ~/.bashrc",
-    "chmod +x .devcontainer/setup_data.sh",
-    ".devcontainer/setup_data.sh"
-  ],
+  // === THIS IS THE FIX ===
+  // We now call a single, reliable master script.
+  "postCreateCommand": ".devcontainer/post-create.sh",
 
   "customizations": {
     "vscode": {
