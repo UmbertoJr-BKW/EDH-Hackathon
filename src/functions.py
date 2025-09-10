@@ -623,3 +623,160 @@ def update_and_save_parquet(new_data_df, file_path, customers_to_update):
     except Exception as e:
         print(f"Error saving file {file_path}: {e}")
 
+def evaluate_trilemma(
+    station_name: str,
+    leg_customer_ids: list,
+    df_full_topology: pd.DataFrame,
+    all_profiles: dict,
+    df_net_load_full_station: pd.DataFrame,
+    df_reinforcement_costs: pd.DataFrame
+):
+    """
+    Evaluates the energy trilemma for a given Local Energy Community (LEG).
+
+    The trilemma is assessed based on three key metrics:
+    1. Grid Reinforcement Cost: The cost to upgrade the shared grid infrastructure
+       of the station to handle the total load, including the LEG's contribution.
+    2. Installed PV Capacity: The total peak power (kWp) of all PV systems
+       within the specified LEG.
+    3. Autarchy: The self-sufficiency rate of the LEG, calculated as the ratio of
+       self-consumed energy to the total energy consumed by the LEG.
+
+    Args:
+        station_name (str): The name of the station the LEG belongs to.
+        leg_customer_ids (list): A list of customer IDs (e.g., 'HAS-xxxx') forming the LEG.
+        df_full_topology (pd.DataFrame): The complete network topology data (`df_full`).
+        all_profiles (dict): A dictionary containing all profile DataFrames
+                             (e.g., {"Consumption": df_consumption, "PV": df_pv, ...}).
+        df_net_load_full_station (pd.DataFrame): The pre-calculated net load for the entire station.
+        df_reinforcement_costs (pd.DataFrame): DataFrame with reinforcement costs.
+
+    Returns:
+        dict: A dictionary containing the trilemma results:
+              {'grid_reinforcement_cost_chf': float,
+               'installed_pv_kwp': float,
+               'autarchy_percentage': float}
+    """
+    print("\n" + "="*80)
+    print(f"--- Starting Trilemma Evaluation for LEG in Station: '{station_name}' ---")
+    print(f"LEG consists of {len(leg_customer_ids)} members.")
+    print("="*80 + "\n")
+    
+    # ==========================================================================
+    # --- 1. Calculate Grid Reinforcement Cost for the Entire Station ---
+    # The cost depends on the total load of the station, as infrastructure is shared.
+    # ==========================================================================
+    print(f"--- [1/3] Evaluating Grid Reinforcement Cost for Station: '{station_name}' ---")
+    df_one_station = df_full_topology[df_full_topology['station'] == station_name].copy()
+    
+    # Build the network graph for the station
+    G, consumer_props, roots = build_and_simplify_network(df_one_station)
+    
+    print("\nRunning dynamic profile analysis to find failures...")
+    dynamic_results = find_failures_with_yearly_profile(
+        graph=G,
+        net_profile_df=df_net_load_full_station,
+        consumer_props=consumer_props,
+        root_node_ids=roots,
+        nominal_voltage=NOMINAL_VOLTAGE
+    )
+    
+    print("\nCalculating suggested grid reinforcements...")
+    reinforcement_results = suggest_grid_reinforcement(
+        initial_graph=G,
+        initial_results=dynamic_results,
+        reinforcement_costs_df=df_reinforcement_costs,
+        net_profile_df=df_net_load_full_station,
+        consumer_props=consumer_props,
+        root_node_ids=roots,
+        nominal_voltage=NOMINAL_VOLTAGE
+    )
+    
+    grid_cost = reinforcement_results.get('total_cost_CHF', 0.0)
+    print(f"✅ Finished Grid Cost Calculation.")
+    print(f"--> Estimated Grid Reinforcement Cost: {grid_cost:.2f} CHF\n")
+
+    # ==========================================================================
+    # --- 2. Calculate Total Installed PV Capacity for the LEG ---
+    # ==========================================================================
+    print(f"--- [2/3] Calculating Installed PV Capacity for the LEG ---")
+    df_pv_profiles = all_profiles.get("PV")
+    
+    # Filter for LEG customers that actually have a PV profile
+    leg_pv_customers = [cid for cid in leg_customer_ids if cid in df_pv_profiles.columns]
+    
+    if not leg_pv_customers:
+        installed_pv = 0.0
+    else:
+        # Get the max value (peak power in kW) for each customer and sum them up
+        installed_pv = df_pv_profiles[leg_pv_customers].max().sum()
+        
+    print(f"✅ Finished PV Capacity Calculation.")
+    print(f"--> Total Installed PV in LEG: {installed_pv:.2f} kWp\n")
+
+    # ==========================================================================
+    # --- 3. Calculate Autarchy (Self-Sufficiency) for the LEG ---
+    # ==========================================================================
+    print(f"--- [3/3] Calculating Autarchy for the LEG ---")
+
+    def get_leg_profile(profile_df, default_val=0):
+        """Helper to safely get and sum profiles for LEG members."""
+        if profile_df is None:
+            # This should not happen if all_profiles is complete, but it's a safe fallback.
+            return pd.Series(default_val, index=all_profiles["Consumption"].index)
+        
+        # Find which of the LEG customers are in this dataframe's columns
+        leg_cols = [cid for cid in leg_customer_ids if cid in profile_df.columns]
+        
+        if not leg_cols:
+            return pd.Series(default_val, index=profile_df.index)
+            
+        return profile_df[leg_cols].sum(axis=1)
+
+    # Calculate total load and generation profiles specifically for the LEG
+    total_load_profile_kw = (get_leg_profile(all_profiles.get("Consumption")) +
+                             get_leg_profile(all_profiles.get("EV")) +
+                             get_leg_profile(all_profiles.get("HP")) +
+                             get_leg_profile(all_profiles.get("battery_in")))
+
+    total_generation_profile_kw = (get_leg_profile(all_profiles.get("PV")) +
+                                   get_leg_profile(all_profiles.get("battery_out")))
+
+    # Convert power (kW) to energy (kWh) by multiplying by the time interval in hours (15 min = 0.25 h)
+    time_interval_h = 0.25
+    total_energy_consumed_kwh = total_load_profile_kw.sum() * time_interval_h
+    
+    if total_energy_consumed_kwh == 0:
+        autarchy_percentage = 0.0
+        print("-> Total energy consumption for the LEG is zero. Autarchy is 0%.")
+    else:
+        # Self-consumed power at each timestep is the minimum of what was generated and what was loaded
+        self_consumption_profile_kw = np.minimum(total_load_profile_kw, total_generation_profile_kw)
+        
+        # Calculate total self-consumed energy
+        total_self_consumed_energy_kwh = self_consumption_profile_kw.sum() * time_interval_h
+        
+        # Autarchy = (Energy self-consumed / Total energy consumed)
+        autarchy = total_self_consumed_energy_kwh / total_energy_consumed_kwh
+        autarchy_percentage = autarchy * 100
+        print(f"-> LEG Total Yearly Consumption: {total_energy_consumed_kwh:,.2f} kWh")
+        print(f"-> LEG Self-Consumed Energy:   {total_self_consumed_energy_kwh:,.2f} kWh")
+        
+    print(f"✅ Finished Autarchy Calculation.")
+    print(f"--> Autarchy of the LEG: {autarchy_percentage:.2f} %\n")
+    
+    # --- Return the final results ---
+    final_results = {
+        'grid_reinforcement_cost_chf': grid_cost,
+        'installed_pv_kwp': installed_pv,
+        'autarchy_percentage': autarchy_percentage
+    }
+    
+    print("="*80)
+    print("--- Trilemma Evaluation Complete ---")
+    print(f"Grid Reinforcement Cost: {final_results['grid_reinforcement_cost_chf']:,.2f} CHF")
+    print(f"LEG Installed PV:        {final_results['installed_pv_kwp']:.2f} kWp")
+    print(f"LEG Autarchy:            {final_results['autarchy_percentage']:.2f} %")
+    print("="*80)
+
+    return final_results
