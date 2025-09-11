@@ -583,46 +583,6 @@ def print_analysis_results(title, results):
 
 import os
 
-def update_and_save_parquet(new_data_df, file_path, customers_to_update):
-    """
-    Saves or updates a Parquet file with new profile data for a specific set of customers.
-
-    Args:
-        new_data_df (pd.DataFrame): DataFrame containing the new profile data. 
-                                    It can be a large frame, but only data from 
-                                    'customers_to_update' will be used.
-        file_path (str): The full path to the Parquet file to be saved.
-        customers_to_update (list): A list of customer IDs whose data should be
-                                    updated or added to the file.
-    """
-    # Filter the new data to only include columns for the customers we just analyzed
-    relevant_new_data = new_data_df[customers_to_update]
-
-    if os.path.exists(file_path):
-        print(f"File '{os.path.basename(file_path)}' exists. Loading and updating...")
-        try:
-            existing_df = pd.read_parquet(file_path)
-            
-            # Update existing columns and add new ones from the relevant new data
-            for col in relevant_new_data.columns:
-                existing_df[col] = relevant_new_data[col]
-            
-            final_df = existing_df
-            print(f"Updated data for {len(customers_to_update)} customers.")
-
-        except Exception as e:
-            print(f"Error reading existing file {file_path}: {e}. Overwriting with new data.")
-            final_df = relevant_new_data
-    else:
-        print(f"File '{os.path.basename(file_path)}' does not exist. Creating new file...")
-        final_df = relevant_new_data
-
-    try:
-        final_df.to_parquet(file_path, index=True)
-        print(f"Successfully saved data to '{file_path}'")
-    except Exception as e:
-        print(f"Error saving file {file_path}: {e}")
-
 def evaluate_trilemma(
     station_name: str,
     leg_customer_ids: list,
@@ -780,3 +740,71 @@ def evaluate_trilemma(
     print("="*80)
 
     return final_results
+
+
+def update_and_save_parquet(new_data_df, file_path, customers_to_update):
+    """
+    Saves or updates a Parquet file with new profile data for a specific set of customers.
+    DEFINITIVE FIX: Handles cases where the existing file has a non-datetime index (e.g., 'V1').
+    It merges based on row position and applies the correct DatetimeIndex from the new data.
+
+    Args:
+        new_data_df (pd.DataFrame): DataFrame with a proper DatetimeIndex containing the new profile data.
+        file_path (str): The full path to the Parquet file to be saved.
+        customers_to_update (list): A list of customer IDs whose data should be updated.
+    """
+    # Filter the new data and ensure it has a proper DatetimeIndex
+    relevant_new_data = new_data_df[customers_to_update].copy()
+    relevant_new_data.index = pd.to_datetime(relevant_new_data.index)
+    
+    # Store the correct index for later use
+    correct_index = relevant_new_data.index
+
+    if os.path.exists(file_path):
+        print(f"File '{os.path.basename(file_path)}' exists. Loading and updating...")
+        try:
+            existing_df = pd.read_parquet(file_path)
+
+            # --- ROBUST MERGE LOGIC FOR INCOMPATIBLE INDICES ---
+
+            # 1. Critical Check: Ensure row counts match. If not, we cannot safely merge.
+            if len(existing_df) != len(relevant_new_data):
+                print(f"  [Warning] Row count mismatch! Existing file has {len(existing_df)} rows, "
+                      f"new data has {len(relevant_new_data)}. Overwriting file to prevent data corruption.")
+                # Force overwrite by raising an exception to jump to the 'except' block
+                raise ValueError("Row count mismatch")
+
+            # 2. Temporarily remove indices to prepare for a position-based merge.
+            #    This is the key step to handle the 'V1' vs. DatetimeIndex conflict.
+            existing_df_vals = existing_df.reset_index(drop=True)
+            new_data_vals = relevant_new_data.reset_index(drop=True)
+            
+            # 3. Identify columns to drop from the existing data
+            cols_to_drop = existing_df_vals.columns.intersection(new_data_vals.columns)
+            df_for_others = existing_df_vals.drop(columns=cols_to_drop)
+            
+            # 4. Concatenate based on the temporary RangeIndex (0, 1, 2...)
+            final_df_no_index = pd.concat([df_for_others, new_data_vals], axis=1)
+
+            # 5. Restore the correct DatetimeIndex
+            final_df = final_df_no_index.set_index(correct_index)
+            
+            # 6. (Optional but good practice) Sort columns for consistency
+            final_df = final_df.reindex(sorted(final_df.columns), axis=1)
+            
+            print(f"Successfully merged data for {len(customers_to_update)} customers.")
+
+        except Exception as e:
+            print(f"  An error occurred during the merge process: {e}. Defaulting to overwrite with new data.")
+            final_df = relevant_new_data
+    else:
+        print(f"File '{os.path.basename(file_path)}' does not exist. Creating new file...")
+        final_df = relevant_new_data
+
+    # --- Save the final DataFrame ---
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        final_df.to_parquet(file_path, index=True)
+        print(f"Successfully saved data to '{os.path.basename(file_path)}'")
+    except Exception as e:
+        print(f"  [ERROR] Failed to save file {file_path}: {e}")
