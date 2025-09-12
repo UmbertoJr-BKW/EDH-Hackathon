@@ -1,3 +1,4 @@
 *checkpoint*
 *.html
 *.parquet
+src/__pycache__/

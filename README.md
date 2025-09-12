@@ -82,3 +82,11 @@ The platform is designed to provide a seamless experience, allowing you to focus
 -   **Automated Evaluation**: Your submission is automatically processed to calculate the three objective scores (Cost, Renewables, Autarky).
 -   **Interactive Leaderboard**: View all results on a live leaderboard that can be sorted by any of the three objectives.
 -   **3D Score Visualization**: Explore the entire solution space in an interactive 3D plot, which highlights the Pareto optimal frontier.
+
+
+# `uv` environment
+
+in case you wanna switch to `uv` ;) -- https://niranjanakella.medium.com/migrate-from-anaconda-to-uv-towards-faster-and-secure-development-environments-fa8dcdf566ee 
+
+* install `uv` with https://docs.astral.sh/uv/getting-started/installation/ 
+* run `uv sync` to create the python env., from the `toml` file -- for more info  , see https://docs.astral.sh/uv/concepts/projects/init/#creating-a-minimal-project 
